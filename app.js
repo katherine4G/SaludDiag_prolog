@@ -1,5 +1,5 @@
-// Guardar como UTF-8
 let ALL_SYMPTOMS = [];
+const SELECTED = new Set(); // guarda casilla yaseleccionada
 const $ = (id) => document.getElementById(id);
 
 async function loadSyms() {
@@ -14,13 +14,16 @@ async function loadSyms() {
     const btnDiag = $('btnDiag');
     if (btnDiag) btnDiag.disabled = false;
   } catch (e) {
-    out('<p class="muted">Error cargando síntomas.</p>');
+    out('<p class="muted">Error cargando sintomas.</p>');
     console.error(e);
   } finally {
     if (btn) btn.disabled = false;
   }
 }
 
+/**
+ * renderSyms: pinta los checkboxes y restaura selecciones previas
+ */
 function renderSyms(list) {
   const q = ($('q').value || '').trim().toLowerCase();
   const tgt = $('symgrid');
@@ -36,19 +39,51 @@ function renderSyms(list) {
     const id = 'sym-' + s;
     const wrap = document.createElement('div');
     wrap.className = 'pill';
-    wrap.innerHTML = `
-      <input type="checkbox" id="${id}" value="${s}">
-      <label for="${id}">${s.replaceAll('_',' ')}</label>`;
+
+    //  crear checkbox con restauración del estado anterior
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.id = id;
+    input.value = s;
+    if (SELECTED.has(s)) input.checked = true; 
+
+    input.onchange = () => {
+      if (input.checked) SELECTED.add(s);
+      else SELECTED.delete(s);
+      toggleDiagnoseButton();
+    };
+
+    const label = document.createElement('label');
+    label.htmlFor = id;
+    label.textContent = s.replaceAll('_', ' ');
+
+    wrap.append(input, label);
     tgt.appendChild(wrap);
   }
 }
 
-function filterSyms() { renderSyms(ALL_SYMPTOMS); }
+/**
+ * Filtra sin perder las selecciones previas
+ */
+function filterSyms() {
+  renderSyms(ALL_SYMPTOMS);
+}
 
+/**
+ * Activa/desactiva el botón Diagnosticar
+ */
+function toggleDiagnoseButton() {
+  const btn = $('btnDiag');
+  if (btn) btn.disabled = SELECTED.size === 0;
+}
+
+/**
+ * Diagnóstico basado en selección actual
+ */
 async function diagnose() {
-  const checked = [...document.querySelectorAll('#symgrid input[type="checkbox"]:checked')].map(i => i.value);
+  const checked = Array.from(SELECTED);
   if (checked.length === 0) {
-    out('<p class="muted">Selecciona al menos un síntoma.</p>');
+    out('<p class="muted">Selecciona al menos un sintoma.</p>');
     return;
   }
   try {
@@ -68,7 +103,7 @@ async function diagnose() {
     let detailHtml = '';
     if (det.modo === 'atajo') {
       const lista = Array.isArray(det.sintomas) ? det.sintomas.join(', ') : '';
-      detailHtml = `<p><b>Regla de atajo activada</b>. Síntomas recibidos: <code>${lista}</code></p>`;
+      detailHtml = `<p><b>Regla de atajo activada</b>. Sintomas recibidos: <code>${lista}</code></p>`;
     } else {
       const top = (det.top_enfermedades || []);
       const items = top.map(parsePair)
@@ -83,7 +118,7 @@ async function diagnose() {
     out(`
       <h3>Tipo probable: <span class="tag">${tipo}</span></h3>
       <p>Enfermedades candidatas:</p>
-      <p>${enferms || '<span class="muted">(ninguna con ≥2 síntomas)</span>'}</p>
+      <p>${enferms || '<span class="muted">(ninguna con ≥2 sintomas)</span>'}</p>
       ${detailHtml}
     `);
   } catch (e) {
@@ -92,17 +127,15 @@ async function diagnose() {
   }
 }
 
+/**
+ * Mostrar resultados
+ */
 function out(html) {
   $('out').innerHTML = '<h2>Resultado</h2>' + html;
 }
 
 /**
- * parsePair: hace robusto el parsing de cada elemento de top_enfermedades
- * Soporta:
- *  - Arrays tipo [score, enf]
- *  - Objetos estilo {"-":[score,"enf"]} (como -(Score,Enf) serializado)
- *  - Cadenas "3-ictus" (en caso de serialización como texto)
- *  - Cualquier otro valor, degradando elegantemente
+ * parsePair: robusto para top_enfermedades
  */
 function parsePair(p) {
   if (Array.isArray(p) && p.length >= 2) {
