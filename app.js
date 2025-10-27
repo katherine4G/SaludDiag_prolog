@@ -1,3 +1,4 @@
+//app.js
 let ALL_SYMPTOMS = [];
 const SELECTED = new Set(); // guarda casilla yaseleccionada
 const $ = (id) => document.getElementById(id);

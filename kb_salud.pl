@@ -14,7 +14,6 @@
     explicacion_categoria/3,
     tiene/2 
 ]).
-
 :- set_prolog_flag(encoding, utf8).
 :- dynamic tiene/2. 
 

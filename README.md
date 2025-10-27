@@ -1,4 +1,4 @@
-# Diagnóstico Médico Básico — Prolog + SWI HTTP Server
+# Diagnóstico Médico Básico, Prolog + SWI HTTP Server
 
 Este proyecto implementa un sistema experto básico para el diagnóstico de dolencias **infecciosas, traumáticas y cardiovasculares**, desarrollado en **SWI-Prolog** usando su biblioteca HTTP integrada.  
 Incluye una interfaz web ligera (`app.js`) que permite seleccionar síntomas y obtener el tipo probable de dolencia mediante reglas lógicas.
