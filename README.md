@@ -1,0 +1,86 @@
+# Diagnóstico Médico Básico — Prolog + SWI HTTP Server
+
+Este proyecto implementa un sistema experto básico para el diagnóstico de dolencias **infecciosas, traumáticas y cardiovasculares**, desarrollado en **SWI-Prolog** usando su biblioteca HTTP integrada.  
+Incluye una interfaz web ligera (`app.js`) que permite seleccionar síntomas y obtener el tipo probable de dolencia mediante reglas lógicas.
+
+
+---
+
+## Requisitos previos
+
+- [SWI-Prolog](https://www.swi-prolog.org/) versión **≥ 9.0.4**
+
+---
+
+## Cómo ejecutar el sistema
+
+### 1- Abrir el proyecto en SWI-Prolog
+
+```bash
+?- working_directory(_, 'C:/Users/../PROLOG_PROJECT/').
+true.
+```
+
+*(Ajustar la ruta de descarga del proyecto dentor de las comillas simples.)*
+
+---
+
+### 2️- Cargar el servidor
+
+```prolog
+?- [server].
+true.
+```
+
+---
+
+### 3️- Iniciar el servidor web
+
+```prolog
+?- server(8080).
+ Servidor iniciado en http://localhost:8080/
+true.
+```
+
+Esto levanta un servidor local en el puerto **8080**.
+
+---
+
+## Uso desde navegador
+
+1. Abre [http://localhost:8080/](http://localhost:8080/)
+2. Presiona **“Cargar síntomas”**
+3. Marca los síntomas que correspondan
+4. Haz clic en **“Diagnosticar”**
+5. El sistema mostrará el tipo de dolencia y las enfermedades candidatas
+
+---
+
+##  Módulos 
+
+###  `kb_salud.pl`
+- Define hechos: `sintoma_de/2`, `es_dolencia_infecciosa/1`, etc.
+- Contiene reglas de diagnóstico como:
+  ```prolog
+  atajo_categoria(P, infecciosa) :-
+      tiene(P, fiebre),
+      (tiene(P, tos); tiene(P, mialgia); tiene(P, rinorrea)).
+  ```
+
+###  `server.pl`
+- Expone endpoints REST (`/api/symptoms`, `/api/diagnose`)
+- Renderiza la interfaz HTML + JS
+- Controla la sesión de síntomas en memoria temporal (`tiene(temp, X)`)
+
+###  `app.js`
+- Genera dinámicamente los checkboxes
+- Mantiene los síntomas seleccionados entre filtrados
+- Envía las solicitudes `fetch()` al servidor
+
+---
+
+ 
+Universidad Nacional de Costa Rica — Ingeniería en Sistemas de Información  
+Sede Regional Brunca – Campus Coto  
+2025
+
