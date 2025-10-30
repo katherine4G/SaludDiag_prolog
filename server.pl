@@ -1,42 +1,96 @@
-
 :- module(server, [server/1, stop/0]).
 :- set_prolog_flag(encoding, utf8).
+:- set_prolog_flag(verbose, silent).
+:- style_check(-singleton).
+:- style_check(-discontiguous).
 
 
 /* --- Librerías HTTP --- */
 :- use_module(library(http/thread_httpd)).
+:- use_module(library(http/http_server)).
 :- use_module(library(http/http_dispatch)).
 :- use_module(library(http/http_json)).
 :- use_module(library(http/json)).
+:- use_module(library(http/http_client)).
+:- use_module(library(http/http_files)).
 :- use_module(library(http/html_write)).
-:- use_module(library(lists), [member/2]).  % evita choque con sum_list/2
+:- use_module(library(lists), [member/2]).
+:- use_module(library(dicts)).
+:- use_module(library(apply)).
 
-/* --- Base de conocimiento en módulo --- */
-:- use_module(kb_salud, [
+/* --- Base de conocimiento --- */
+:- use_module('./kb_salud.pl', [
        sintoma_de/2,
        es_dolencia_infecciosa/1,
        es_dolencia_traumatica/1,
-       es_dolencia_cardiovascular/1
+       es_dolencia_cardiovascular/1,
+       tipo_probable/2,
+       enfermedades_posibles/2,
+       explicacion_categoria/3,
+       tiene/2
    ]).
 
-/* --- Rutas --- */
+:- dynamic compare_scores/3.
+
+/* ======================== LOGS COLOR SEGUROS ======================== */
+
+log(Color, Fmt, Args) :-
+    % Evita escribir en flujo HTTP, solo en salida estándar
+    with_output_to(user_output, ansi_format([fg(Color)], Fmt, Args)).
+
+/* ======================== RUTAS ======================== */
+
 :- http_handler(root(.),               ui_page,         []).
 :- http_handler(root(api/symptoms),    api_symptoms,    []).
-:- http_handler(root(api/diagnose),    api_diagnose,    [method(post)]).
+:- http_handler(root(api/diagnose),    api_diagnose,    []).
 :- http_handler(root('app.js'),        serve_app_js,    []).
 
-/* --- Arranque / Parada --- */
+/* ======================== ARRANQUE / PARADA ======================== */
+
 server(Port) :-
-    http_server(http_dispatch, [port(Port)]).
+    ignore(stop),
+    catch(
+        http_server(http_dispatch, [port(Port), encoding(utf8)]),
+        E,
+        ( log(red, 'Error iniciando servidor: ~w~n', [E]), fail )
+    ),
+    log(green, 'Servidor iniciado en ', []),
+    log(cyan, 'http://localhost:~w/~n', [Port]),
+    !.
 
 stop :-
-    http_stop_server(_, []).
+    findall(Port,
+        (   current_prolog_flag(http_server, Servers),
+            member(_{port:Port}, Servers)
+        ),
+        Ports),
+    ( Ports == [] ->
+        log(yellow, 'No hay servidores activos.~n', [])
+    ; forall(member(Port, Ports),
+          ( log(red, 'Deteniendo servidor en puerto ~w...~n', [Port]),
+            catch(http_stop_server(Port, [force(true)]), _, true)
+          )
+      ),
+      log(green, 'Todos los servidores cerrados correctamente.~n', [])
+    ),
+    forall(
+        ( thread_property(Id, alias(Name)),
+          ( sub_atom(Name, 0, _, _, 'httpd@')
+          ; sub_atom(Name, 0, _, _, 'http@')
+          )
+        ),
+        (   log(yellow, 'Cerrando hilo ~w...~n', [Name]),
+            catch(thread_signal(Id, abort), _, true),
+            catch(thread_join(Id, _), _, true)
+        )
+    ),
+    !.
 
-/* ======================== UI ======================== */
+/* ======================== INTERFAZ HTML ======================== */
 
 ui_page(_Request) :-
     reply_html_page(
-      [ title('Diagnóstico básico (Prolog)')
+      [ title('Diagnostico basico (Prolog)')
       , meta([charset='UTF-8'])
       , \styles
       ],
@@ -69,21 +123,21 @@ page_body -->
     header(\header_bar),
     div(class(wrap), [
       div(class(card), [
-        h2('Selecciona síntomas'),
+        h2('Selecciona sintomas'),
         div(class(row), [
-          input([type(text), id(q), placeholder('Filtrar síntomas…'), oninput('filterSyms()')]),
-          button([ id(btnLoad), onclick('loadSyms()') ], 'Cargar síntomas'),
+          input([type(text), id(q), placeholder('Filtrar sintomas'), oninput('filterSyms()')]),
+          button([ id(btnLoad), onclick('loadSyms()') ], 'Cargar sintomas'),
           span(class(muted), 'Sugerencia: escribe "fiebre", "tos", "dolor", etc.')
         ]),
         div([id(symgrid), class(symgrid)], []),
         div(class(row), [
           button([ id(btnDiag), onclick('diagnose()'), disabled(true) ], 'Diagnosticar'),
-          span(class(muted), 'El diagnóstico es educativo, no médico.')
+          span(class(muted), 'El diagnostico es educativo, no medico.')
         ])
       ]),
       div([id(out), class('card res')], [
         h2('Resultado'),
-        p(class(muted), 'Aún no hay resultado.')
+        p(class(muted), 'Aun no hay resultado.')
       ])
     ]),
     footer(small('Hecho con SWI-Prolog + library(http).')),
@@ -102,100 +156,112 @@ api_symptoms(_Req) :-
     reply_json_dict(_{symptoms: All}).
 
 api_diagnose(Request) :-
-    http_read_json_dict(Request, DictIn),
+    catch(
+        http_read_json_dict(Request, DictIn),
+        E,
+        ( format(user_error, 'Error leyendo JSON: ~q~n', [E]),
+          throw(http_reply(bad_request('Cuerpo JSON inválido')))
+        )
+    ),
     (   _{symptoms: Syms0} :< DictIn
     ->  true
-    ;   throw(http_reply(bad_request('Missing "symptoms"')))
+    ;   throw(http_reply(bad_request('Falta el campo "symptoms"')))
     ),
+
     maplist(to_atom, Syms0, Syms),
-    tipo_probable_list(Syms, Tipo),
-    enfermedades_posibles_list(Syms, Enferms),
-    explicacion_categoria_list(Syms, Tipo, Detalle),
-    reply_json_dict(_{ tipo:Tipo, enfermedades:Enferms, detalle:Detalle }).
+    format(user_output, 'Sintomas recibidos: ~w~n', [Syms]),
 
-to_atom(X, A) :- (atom(X) -> A=X ; atom_string(A, X)).
-
-/* --------- Lógica basada en LISTA de síntomas --------- */
-
-atajo_categoria_list(Syms, traumatica) :-
-    member(antecedente_golpe, Syms),
-    member(dolor_localizado, Syms).
-
-atajo_categoria_list(Syms, cardiovascular) :-
-    member(dolor_toracico_opresivo, Syms),
-    member(disnea, Syms).
-
-atajo_categoria_list(Syms, cardiovascular) :-
-    (   member(debilidad_hemicuerpo, Syms)
-    ;   member(dificultad_hablar, Syms)
-    ;   member(desviacion_boca, Syms)
+    retractall(kb_salud:tiene(temp, _)),
+    forall(member(S, Syms),
+        ( assertz(kb_salud:tiene(temp, S)),
+          format(user_output, 'Hecho agregado: tiene(temp, ~w)~n', [S])
+        )
     ),
-    member(inicio_brusco, Syms).
 
-atajo_categoria_list(Syms, infecciosa) :-
-    member(fiebre, Syms),
-    (   member(tos, Syms)
-    ;   member(mialgia, Syms)
-    ;   member(rinorrea, Syms)
-    ;   member(diarrea, Syms)
+    findall(X, kb_salud:tiene(temp, X), HechosActuales),
+    format(user_output, 'Hechos actuales en kb_salud: ~w~n', [HechosActuales]),
+
+    (   catch((
+            (   kb_salud:tipo_probable(temp, Tipo)
+            ->  true
+            ;   Tipo = desconocido
+            ),
+            (   kb_salud:enfermedades_posibles(temp, Enferms)
+            ->  true
+            ;   Enferms = []
+            ),
+            (   kb_salud:explicacion_categoria(temp, Tipo, Detalle)
+            ->  true
+            ;   Detalle = _{modo: none, tipo: Tipo, sintomas: Syms}
+            )
+        ), E, (
+            format(user_error, 'Error interno al diagnosticar: ~q~n', [E]),
+            throw(http_reply(server_error('Error interno en diagnóstico')))
+        ))
+    ),
+
+    (   is_dict(Detalle) -> DetOut = Detalle
+    ;   Detalle = detalle(score(Tipo, Score, Top)) ->
+        (   is_list(Top)
+        ->  findall([S,E], (member(S-E, Top)), TopJSON)
+        ;   TopJSON = []
+        ),
+        DetOut = _{
+            modo: score,
+            tipo: Tipo,
+            score_categoria: Score,
+            top_enfermedades: TopJSON
+        }
+    ;   Detalle = detalle(atajo(Tipo, Hechos)) ->
+        DetOut = _{
+            modo: atajo,
+            tipo: Tipo,
+            sintomas: Hechos
+        }
+    ;   DetOut = _{
+            modo: desconocido,
+            tipo: Tipo,
+            sintomas: Syms
+        }
+    ),
+
+    ( Enferms == [] ->
+        format(atom(M), 'No se detectan enfermedades probables, aunque parece una dolencia de tipo ~w.', [Tipo])
+    ; include(nonvar, Enferms, EnfermsOK),
+      ( EnfermsOK == [] ->
+          format(atom(M), 'Parece una dolencia de tipo ~w, pero no se lograron identificar enfermedades especificas.', [Tipo])
+      ; atomic_list_concat(EnfermsOK, ', ', EnfermsTxt),
+        format(atom(M), 'Probablemente se trate de una dolencia ~w como: ~w.', [Tipo, EnfermsTxt])
+      )
+    ),
+
+    log(green, 'Diagnostico completado: ~w (~w)~n', [Tipo, Enferms]),
+
+    reply_json_dict(_{
+        tipo: Tipo,
+        enfermedades: Enferms,
+        detalle: DetOut,
+        mensaje: M
+    }).
+
+/* ==================== Utilidades ==================== */
+to_atom(X, A) :-
+    ( atom(X) -> A = X
+    ; atom_string(A, X)
     ).
-
-score_enfermedad_list(Syms, Enf, Score) :-
-    findall(S, (member(S, Syms), sintoma_de(Enf, S)), Ss),
-    length(Ss, Score).
-
-enfermedad_posible_list(Syms, Enf) :-
-    score_enfermedad_list(Syms, Enf, Score),
-    Score >= 2.
-
-enfermedades_posibles_list(Syms, Unicas) :-
-    findall(Enf, enfermedad_posible_list(Syms, Enf), L),
-    sort(L, Unicas).
-
-categoria_score_list(Syms, infecciosa, Score) :-
-    findall(S, (es_dolencia_infecciosa(E), score_enfermedad_list(Syms, E, S)), L),
-    lists:sum_list(L, Score).
-categoria_score_list(Syms, traumatica, Score) :-
-    findall(S, (es_dolencia_traumatica(E), score_enfermedad_list(Syms, E, S)), L),
-    lists:sum_list(L, Score).
-categoria_score_list(Syms, cardiovascular, Score) :-
-    findall(S, (es_dolencia_cardiovascular(E), score_enfermedad_list(Syms, E, S)), L),
-    lists:sum_list(L, Score).
-
-mejor_categoria_por_score_list(Syms, CatMax) :-
-    findall(Score-Cat,
-            ( member(Cat, [infecciosa, traumatica, cardiovascular]),
-              categoria_score_list(Syms, Cat, Score)
-            ), Pares),
-    ( Pares == [] -> CatMax = infecciosa
-    ; sort(Pares, Ordenados),
-      last(Ordenados, _-CatMax)
-    ).
-
-tipo_probable_list(Syms, Tipo) :-
-    (   atajo_categoria_list(Syms, Tipo) -> true
-    ;   mejor_categoria_por_score_list(Syms, Tipo)
-    ).
-
-explicacion_categoria_list(Syms, Tipo, Detalle) :-
-    (   atajo_categoria_list(Syms, Tipo)
-    ->  Detalle = _{modo:atajo, tipo:Tipo, sintomas:Syms}
-    ;   categoria_score_list(Syms, Tipo, ScoreCat),
-        findall(Score-Enf,
-                ( member(Enf, [gripe, covid19, dengue, malaria,
-                               fractura, esguince, contusion, hematoma, cortadura,
-                               infarto, hipertension, ictus, angina_de_pecho, arritmia]),
-                  score_enfermedad_list(Syms, Enf, Score),
-                  Score > 0),
-                Pares),
-        sort(Pares, Orden), reverse(Orden, Desc),
-        take(3, Desc, Top),
-        Detalle = _{modo:score, tipo:Tipo, score_categoria:ScoreCat, top_enfermedades:Top}
-    ).
-
-take(N, L, R) :- length(R, N), append(R, _, L), !.
-take(_, L, L).
 
 /* ==================== Estático: app.js ==================== */
 serve_app_js(_Request) :-
-    http_reply_file('app.js', [mime_type(text/javascript)], _).
+    working_directory(D, D),
+    directory_file_path(D, 'app.js', RawPath),
+    prolog_to_os_filename(RawPath, Path),
+    (   exists_file(Path)
+    ->  print_message(informational, serving(Path)),
+        http_reply_file(Path,
+            [ unsafe(true),
+              mime_type('application/javascript')
+            ],
+            [])
+    ;   print_message(error, file_not_found(Path)),
+        throw(http_reply(not_found('app.js no encontrado o sin permisos')))
+    ).

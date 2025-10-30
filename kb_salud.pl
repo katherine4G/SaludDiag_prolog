@@ -1,14 +1,9 @@
 :- module(kb_salud, [
-    % Tipos / taxonomía
     es_dolencia_infecciosa/1,
     es_dolencia_traumatica/1,
     es_dolencia_cardiovascular/1,
     categoria_de_enfermedad/2,
-
-    % Conocimiento clínico
     sintoma_de/2,
-
-    % Reglas de ayuda y scoring
     atajo_categoria/2,
     score_enfermedad/3,
     enfermedad_posible/2,
@@ -16,9 +11,11 @@
     categoria_score/3,
     mejor_categoria_por_score/2,
     tipo_probable/2,
-    explicacion_categoria/3
+    explicacion_categoria/3,
+    tiene/2 
 ]).
 :- set_prolog_flag(encoding, utf8).
+:- dynamic tiene/2. 
 
 /* Utilidades de listas (miembros y sumatoria) */
 :- use_module(library(lists), [member/2, sum_list/2]).
@@ -170,13 +167,24 @@ score_enfermedad(P, Enf, Score) :-
     length(Ss, Score).
 
 enfermedad_posible(P, Enf) :-
+    nonvar(P),
+    nonvar(Enf),
     score_enfermedad(P, Enf, Score),
+    number(Score),
     Score >= 2.
 
-% Robusto (findall + sort)
+% Versión robusta con validación de variables
 enfermedades_posibles(P, Unicas) :-
-    findall(Enf, enfermedad_posible(P, Enf), L),
-    sort(L, Unicas).
+    findall(Enf,
+        ( member(Enf, [gripe, covid19, dengue, malaria,
+                       fractura, esguince, contusion, hematoma, cortadura,
+                       infarto, hipertension, ictus, angina_de_pecho, arritmia]),
+          catch(score_enfermedad(P, Enf, S), _, S = 0),
+          number(S),
+          S >= 2
+        ),
+        Enferms),
+    sort(Enferms, Unicas).
 
 categoria_score(P, infecciosa, Score) :-
     findall(S, (es_dolencia_infecciosa(E), score_enfermedad(P, E, S)), L),
@@ -207,16 +215,25 @@ explicacion_categoria(P, Tipo, detalle(atajo(Tipo, Hecho))) :-
     findall(S, tiene(P,S), Hecho).
 explicacion_categoria(P, Tipo, detalle(score(Tipo, ScoreCat, TopEnfs))) :-
     \+ atajo_categoria(P, _),
-    categoria_score(P, Tipo, ScoreCat),
+    (   catch(categoria_score(P, Tipo, ScoreCat), _, ScoreCat = 0)
+    ->  true ; ScoreCat = 0
+    ),
     findall(Score-Enf,
-            ( member(Enf, [gripe, covid19, dengue, malaria,
-                           fractura, esguince, contusion, hematoma, cortadura,
-                           infarto, hipertension, ictus, angina_de_pecho, arritmia]),
-              score_enfermedad(P, Enf, Score),
-              Score > 0),
-            Pares),
-    sort(Pares, Orden), reverse(Orden, Desc),
-    first_n(3, Desc, TopEnfs).
+        ( member(Enf, [gripe, covid19, dengue, malaria,
+                       fractura, esguince, contusion, hematoma, cortadura,
+                       infarto, hipertension, ictus, angina_de_pecho, arritmia]),
+          catch(score_enfermedad(P, Enf, Score), _, Score = 0),
+          nonvar(Score),
+          number(Score),
+          Score > 0
+        ),
+        Pares),
+    (   is_list(Pares), Pares \= [] ->
+        sort(Pares, Orden),
+        reverse(Orden, Desc),
+        first_n(3, Desc, TopEnfs)
+    ;   TopEnfs = []
+    ).
 
 % ----------- Auxiliares internas (no exportar) ----------
 first_n(N, L, R) :- length(R, N), append(R, _, L), !.
