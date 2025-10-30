@@ -13,32 +13,20 @@ Incluye una interfaz web ligera (`app.js`) que permite seleccionar síntomas y o
 
 ## Cómo ejecutar el sistema
 
-### 1- Abrir el proyecto en SWI-Prolog
+### 1- Abrir el proyecto desde la consola CMD
 
 ```bash
-?- working_directory(_, 'C:/Users/../PROLOG_PROJECT/').
-true.
+cd C:/Users/../PROLOG_PROJECT/
 ```
 
 *(Ajustar la ruta de descarga del proyecto dentor de las comillas simples.)*
 
 ---
 
-### 2️- Cargar el servidor
+### 3️- Iniciar el servidor completo
 
 ```prolog
-?- [server].
-true.
-```
-
----
-
-### 3️- Iniciar el servidor web
-
-```prolog
-?- server(8080).
- Servidor iniciado en http://localhost:8080/
-true.
+swipl run.pl
 ```
 
 Esto levanta un servidor local en el puerto **8080**.
@@ -48,10 +36,9 @@ Esto levanta un servidor local en el puerto **8080**.
 ## Uso desde navegador
 
 1. Abre [http://localhost:8080/](http://localhost:8080/)
-2. Presiona **“Cargar síntomas”**
-3. Marca los síntomas que correspondan
-4. Haz clic en **“Diagnosticar”**
-5. El sistema mostrará el tipo de dolencia y las enfermedades candidatas
+2. Marca los síntomas que correspondan
+3. Haz clic en **“Diagnosticar”**
+4. El sistema mostrará el tipo de dolencia y las enfermedades candidatas
 
 ---
 

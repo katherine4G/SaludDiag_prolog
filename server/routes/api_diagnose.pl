@@ -1,27 +1,26 @@
-:- module(api_diagnose, []).
-:- use_module(library(http/http_dispatch)).
+% server/routes/api_diagnose.pl
+:- module(api_diagnose, [api_diagnose/1]).
 :- use_module(library(http/http_json)).
-:- use_module(knowledge(core/kb_central)).
+:- use_module(core(kb_inferencia)).
+:- use_module(core(kb_central)).
 :- use_module(server(utils/logger)).
 
-:- http_handler(root(api/diagnose), api_diagnose, []).
+api_diagnose(Req) :-
+    http_read_json_dict(Req, Dict),
+    Syms0 = Dict.symptoms,
+    maplist(to_atom, Syms0, Syms),
 
-api_diagnose(Request) :-
-	catch(http_read_json_dict(Request, DictIn),
-		_,
-		throw(http_reply(bad_request('JSON inválido')))),
-	Syms = DictIn.get(symptoms),
-	maplist(to_atom, Syms, Symptoms),
-	retractall(kb_central : tiene(temp, _)),
-	forall(member(S, Symptoms),
-		assertz(kb_central : tiene(temp, S))),
-	kb_central : tipo_probable(temp, Tipo),
-	kb_central : enfermedades_posibles(temp, Enferms),
-	kb_central : explicacion_categoria(temp, Tipo, Det),
-	log(green, 'Diagnóstico: ~w -> ~w~n', [Tipo, Enferms]),
-	reply_json_dict(_{tipo : Tipo, enfermedades : Enferms, detalle : Det}).
+    retractall(kb_central:tiene(temp, _)),
+    forall(member(S, Syms), assertz(kb_central:tiene(temp, S))),
 
-to_atom(X, A) :-
-	(atom(X) ->
-	A = X;
-	atom_string(A, X)).
+    (   tipo_probable(temp, Tipo) -> true ; Tipo = desconocido ),
+    (   enfermedades_posibles(temp, Enferms) -> true ; Enferms = [] ),
+    (   explicacion_categoria(temp, Tipo, Detalle) -> true ; Detalle = _{} ),
+
+    reply_json_dict(_{
+        tipo: Tipo,
+        enfermedades: Enferms,
+        detalle: Detalle
+    }).
+
+to_atom(X, A) :- (atom(X) -> A=X ; atom_string(A, X)).

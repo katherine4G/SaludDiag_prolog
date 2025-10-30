@@ -1,3 +1,4 @@
+% server/routes/dev_debug.pl
 :- module(dev_debug, []).
 :- use_module(library(http/http_dispatch)).
 :- use_module(library(http/http_json)).

@@ -1,6 +1,10 @@
-:- module(kb_cardiovasculares, [sintoma_de/2, categoria/1]).
-:- dynamic sintoma_de/2.
-categoria(cardiovascular).
+% kmowledge/cardiovasculares/kb_cardiovasculares.pl
+:- module(kb_cardiovasculares, [es_dolencia_cardiovascular/1, sintoma_de/2]).
 
-sintoma_de(angina, dolor_toracico_opresivo).
-sintoma_de(angina, disnea).
+es_dolencia_cardiovascular(infarto).
+es_dolencia_cardiovascular(hipertension).
+
+sintoma_de(infarto, dolor_toracico_opresivo).
+sintoma_de(infarto, disnea).
+sintoma_de(hipertension, cefalea).
+sintoma_de(hipertension, zumbido_oidos).
