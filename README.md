@@ -19,7 +19,7 @@ Incluye una interfaz web ligera (`app.js`) que permite seleccionar síntomas y o
 cd C:/Users/../PROLOG_PROJECT/
 ```
 
-*(Ajustar la ruta de descarga del proyecto, o abres un anueva terminal de VS code)*
+*(Ajustar la ruta de descarga del proyecto en cmd, o abres una nueva terminal de VS code)*
 
 ---
 
@@ -30,7 +30,14 @@ swipl run.pl
 ```
 
 Esto levanta un servidor local en el puerto **8080**.
+---
 
+### 3- Apagar el servidor por completo
+
+```bash
+ctrl + C
+```
+Esto va a cerrar toods los hilos levantados y terminará el proceso.
 ---
 
 ## Uso desde navegador
