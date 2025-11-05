@@ -1,7 +1,4 @@
 % server/server.pl
-% =====================================
-% Archivo: server/server.pl
-% =====================================
 :- module(server, [server/1, stop/0, stop_all/0]).
 :- set_prolog_flag(encoding, utf8).
 
@@ -101,6 +98,7 @@ stop :- stop_all.
 
 % stop_all/0 — Detiene todos los HTTP activos
 stop_all :-
+    % --- Detener servidores activos ---
     findall(Port,
         ( current_prolog_flag(http_server, Servers),
           member(_{port:Port}, Servers)
@@ -110,20 +108,41 @@ stop_all :-
         log(yellow, 'No hay servidores activos.~n', [])
     ; forall(member(P, Ports),
           ( log(red, 'Cerrando servidor en puerto ~w...~n', [P]),
-            catch(http_stop_server(P, [force(true)]), _, true)
+            catch(http_stop_server(P, [force(true)]), E,
+                  log(red, ' Error al cerrar servidor (~w): ~w~n', [P, E]))
           )
       ),
-      log(green, 'Todos los servidores cerrados correctamente.~n', [])
+      log(green, 'Servidores HTTP detenidos correctamente.~n', [])
     ),
-    forall(
-        ( thread_property(Id, alias(Name)),
-          sub_atom(Name, 0, _, _, 'http@')
-        ),
-        ( catch(thread_signal(Id, abort), _, true),
-          catch(thread_join(Id, _), _, true)
-        )
-    ).
 
+    % --- Espera breve para evitar race condition ---
+    sleep(0.2),
+
+    % --- Forzar terminación de hilos residuales http@ / httpd@ ---
+    repeat,
+        findall(Id-Name, (
+            thread_property(Id, alias(Name)),
+            ( sub_atom(Name, 0, _, _, 'http@')
+            ; sub_atom(Name, 0, _, _, 'httpd@')
+            )
+        ), List),
+        ( List == [] ->
+            !
+        ; forall(member(Id-Name, List),
+              (
+                ( catch(thread_signal(Id, abort), _, true),
+                  catch(thread_join(Id, _), _, true)
+                ->  log(yellow, ' Hilo residual terminado: ~w~n', [Name])
+                ;   log(gray, 'Esperando cierre natural: ~w~n', [Name])
+                )
+              )
+          ),
+          sleep(0.1),
+          fail
+        ),
+    log(green, ' Todos los hilos HTTP terminados correctamente.~n', []).
+
+% Servir app.js (frontend)
 serve_app_js(_Req) :-
     http_reply_file('./static/app.js',
         [unsafe(true), mime_type('application/javascript')], []).
