@@ -1,11 +1,12 @@
-% server/routes/ui_page.pl
 :- module(ui_page, [ui_page/1]).
 :- use_module(library(http/html_write)).
 
 ui_page(_Request) :-
+    get_time(Now),
+    format_time(atom(Ver), '%Y%m%d%H%M', Now),  % versión única por hora
     reply_html_page(
         [title('Diagnóstico básico (Prolog)'), meta([charset='UTF-8'])],
-        [\styles, \page_body]
+        [\styles, \page_body(Ver)]
     ).
 
 styles -->
@@ -21,7 +22,6 @@ styles -->
         '.symgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;max-height:360px;overflow:auto}',
         '.pill{display:flex;align-items:center;gap:8px;background:#111827;border:1px solid #334155;border-radius:999px;padding:6px 10px}',
         '.tag{background:#0b1320;border:1px solid #334155;border-radius:999px;padding:4px 8px}',
-
         '.tag.bg-blue{background:#2563eb;color:#fff}',
         '.tag.bg-red{background:#dc2626;color:#fff}',
         '.tag.bg-yellow{background:#facc15;color:#111}',
@@ -29,11 +29,10 @@ styles -->
         '.tag.bg-orange{background:#fb923c;color:#111}',
         '.tag.bg-purple{background:#a855f7;color:#fff}',
         '.tag.bg-gray{background:#6b7280;color:#fff}',
-
         'footer{color:#94a3b8;padding:10px;border-top:1px solid #334155}'
     ])).
 
-page_body -->
+page_body(Ver) -->
     html([
         header(h1('Clasificador de Dolencia (Prolog)')),
         div(class(wrap), [
@@ -56,5 +55,5 @@ page_body -->
             ])
         ]),
         footer('Hecho con SWI-Prolog + library(http).'),
-        script([type('module'), src('/app.js')], [])
+        script([type('module'), src('/app.js?v=' + Ver)], [])
     ]).

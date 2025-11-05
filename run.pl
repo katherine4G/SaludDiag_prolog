@@ -6,23 +6,14 @@
 :- use_module('server/server.pl', [server/1, stop_all/0]).
 
 main :-
-    setup_call_cleanup(
-        (
-            catch(stop_all, _, true),              % apaga cualquier servidor previo
-            server(8080),                          % inicia servidor
-            format('Servidor iniciado en http://localhost:8080/~n', []),
-            at_halt(on_exit)                       % registra cierre limpio
-        ),
-        wait_forever,
-        (
-            stop_all,
-            format('~nServidor detenido correctamente.~n', [])
-        )
-    ).
+    catch(stop_all, _, true),
+    server(8080),
+    format('Servidor iniciado en http://localhost:8080/~n', []),
+    wait_loop.
 
-wait_forever :-
-    thread_get_message(_).
-
-on_exit :-
-    stop_all,
-    format('~n Servidor detenido correctamente (Ctrl + C).~n', []).
+wait_loop :-
+    format('Presiona CTRL + C para detener .~n', []),
+    read_line_to_string(user_input, _),
+    catch(stop_all, _, true),
+    format('Servidor detenido correctamente.~n'),
+    halt(0).

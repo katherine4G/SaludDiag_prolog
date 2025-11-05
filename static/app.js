@@ -120,7 +120,7 @@ async function diagnose() {
         <p><b>Por puntaje</b>. Score de categoría: <code>${
           det.score_categoria ?? 0
         }</code></p>
-        <p>Top enfermedades:</p>
+        <p>Enfermedades relacionadas:</p>
         <ul>${items || "<li>(sin coincidencias)</li>"}</ul>`;
     }
     out(`
