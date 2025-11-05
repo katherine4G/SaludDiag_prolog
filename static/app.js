@@ -1,205 +1,186 @@
+// static/app.js
+
+// ===== estado global =====
 let ALL_SYMPTOMS = [];
-const SELECTED = new Set();
-const $ = (id) => document.getElementById(id);
+let FILTER = "";
 
-// Cargar síntomas desde /api/symptoms
-async function loadSyms() {
-  const btn = $("btnLoad");
-  if (btn) btn.disabled = true;
-  try {
-    const res = await fetch("/api/symptoms");
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    ALL_SYMPTOMS = data.symptoms || [];
-    renderSyms(ALL_SYMPTOMS);
-    const btnDiag = $("btnDiag");
-    if (btnDiag) btnDiag.disabled = false;
-  } catch (e) {
-    out('<p class="muted">Error cargando síntomas.</p>');
-    console.error(e);
-  } finally {
-    if (btn) btn.disabled = false;
-  }
+// ===== helpers visuales =====
+function $(s){ return document.querySelector(s); }
+function setOut(html){ $("#out").innerHTML = html; }
+function ul(items){ return `<ul>${(items||[]).map(x=>`<li>${x}</li>`).join("")}</ul>`; }
+function setBadge(text, cls=""){ const b=$("#tipoBadge"); if(b){ b.textContent=text; b.className="badge " + cls; } }
+function toast(msg){
+  const t=$("#toast"); if(!t) return;
+  t.textContent=msg; t.style.display="block";
+  clearTimeout(window.__t);
+  window.__t=setTimeout(()=>t.style.display="none", 1800);
+}
+function setSelCount(){
+  const el=$("#selCount"); if(!el) return;
+  const n = obtenerSintomasSeleccionados().length;
+  el.textContent = `${n} seleccionados`;
 }
 
-// Renderizar los checkboxes de síntomas
-function renderSyms(list) {
-  const q = ($("q").value || "").trim().toLowerCase();
-  const tgt = $("symgrid");
-  tgt.innerHTML = "";
-
-  const filtered = list.filter((s) =>
-    s.replaceAll("_", " ").toLowerCase().includes(q)
-  );
-
-  if (filtered.length === 0) {
-    tgt.innerHTML =
-      '<p class="muted" style="grid-column:1/-1;margin:6px 0;">Sin resultados</p>';
-    return;
-  }
-
-  for (const s of filtered) {
-    const id = "sym-" + s;
-    const wrap = document.createElement("div");
-    wrap.className = "pill";
-
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.id = id;
-    input.value = s;
-    if (SELECTED.has(s)) input.checked = true;
-
-    input.onchange = () => {
-      if (input.checked) SELECTED.add(s);
-      else SELECTED.delete(s);
-      toggleDiagnoseButton();
-    };
-
-    const label = document.createElement("label");
-    label.htmlFor = id;
-    label.textContent = s.replaceAll("_", " ");
-
-    wrap.append(input, label);
-    tgt.appendChild(wrap);
-  }
+// ===== render de síntomas =====
+function renderSymptoms(){
+  const grid = $("#symgrid");
+  const filtered = ALL_SYMPTOMS.filter(s => s.toLowerCase().includes(FILTER.toLowerCase()));
+  grid.innerHTML = filtered.map(s => `
+    <label class="pill">
+      <input type="checkbox" value="${s}" onchange="toggleDiagBtn(); setSelCount()">
+      <span>${s}</span>
+    </label>
+  `).join("");
+  toggleDiagBtn();
+  setSelCount();
 }
 
-// Mantener las selecciones al filtrar
-function filterSyms() {
-  renderSyms(ALL_SYMPTOMS);
+// ===== estados =====
+function toggleDiagBtn(){
+  const any = obtenerSintomasSeleccionados().length > 0;
+  const btn = $("#btnDiag");
+  if (btn) btn.disabled = !any;
 }
-
-// Activar o desactivar el botón de diagnóstico
-function toggleDiagnoseButton() {
-  const btn = $("btnDiag");
-  if (btn) btn.disabled = SELECTED.size === 0;
+function obtenerSintomasSeleccionados(){
+  return [...document.querySelectorAll('#symgrid input[type="checkbox"]:checked')].map(i => i.value);
 }
+window.filterSyms = function(){
+  FILTER = $("#q").value.trim();
+  renderSymptoms();
+};
 
-// Diagnóstico: enviar síntomas seleccionados al backend
-async function diagnose() {
-  const checked = Array.from(SELECTED);
-  if (checked.length === 0) {
-    out('<p class="muted">Selecciona al menos un síntoma.</p>');
-    return;
-  }
+// ===== llamadas =====
+window.loadSyms = async function(){
+  $("#symgrid").innerHTML = "<p class='counter'>Cargando síntomas…</p>";
+  const res = await fetch("/api/symptoms");
+  const data = await res.json();
+  ALL_SYMPTOMS = data.symptoms || [];
+  renderSymptoms();
+  toast(`Se cargaron ${ALL_SYMPTOMS.length} síntomas`);
+  setOut(`<p class="counter">Listo. Selecciona algunos y diagnostica.</p>`);
+};
 
-  try {
-    const res = await fetch("/api/diagnose", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symptoms: checked }),
-    });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
+window.diagnose = async function(){
+  const symptoms = obtenerSintomasSeleccionados();
+  if (!symptoms.length){ toast("Selecciona al menos un síntoma"); return; }
 
-    const tipo = data.tipo || "desconocido";
-    const enferms = (data.enfermedades || [])
-      .map((e) => `<span class="tag">${e}</span>`)
-      .join(" ");
+  setOut(`<p class="muted">Analizando…</p>`);
+  const res = await fetch("/api/diagnose", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ symptoms })
+  });
+  const data = await res.json();
 
-    const det = data.detalle || {};
-    let detailHtml = "";
+  const tipo = data.tipo || "desconocido";
+  setBadge(tipo, tipo !== "desconocido" ? "ok" : "");
 
-    if (det.modo === "atajo") {
-      const lista = Array.isArray(det.sintomas) ? det.sintomas.join(", ") : "";
-      detailHtml = `
-        <p><b>Regla de atajo activada</b> — síntomas: <code>${lista}</code></p>`;
-    } else {
-      const top = det.top_enfermedades || [];
-      const items = top
-        .map(parsePair)
-        .map(
-          ({ enf, score }) =>
-            `<li><b>${enf}</b>: <code>${score}</code> coincidencia${
-              score !== 1 ? "s" : ""
-            }</li>`
-        )
-        .join("");
+  // chips de enfermedades (las del array plano)
+  const chips = (data.enfermedades || [])
+    .map(e => `<span class="chip">${e}</span>`).join(" ") || '<span class="chip">—</span>';
 
-      detailHtml = `
-        <p><b>Por puntaje</b>. Score de categoría: <code>${
-          det.score_categoria ?? 0
-        }</code></p>
-        <p>Enfermedades relacionadas:</p>
-        <ul>${items || "<li>(sin coincidencias)</li>"}</ul>`;
-    }
-    out(`
-      <h3>Tipo probable: <span class="tag ${colorPorCategoria(tipo)}">${tipo}</span></h3>
-      <p class="muted">${descripcionPorCategoria(tipo)}</p>
-      <p><b>Enfermedades candidatas:</b></p>
-      <p>${
-        enferms || '<span class="muted">(ninguna con ≥2 síntomas)</span>'
-      }</p>
-      ${detailHtml}
-    `);
-  } catch (e) {
-    out('<p class="muted">Error al diagnosticar.</p>');
-    console.error(e);
-  }
-}
+  // top_enfermedades (con barras)
+  const top = (data.detalle && data.detalle.top_enfermedades) ? data.detalle.top_enfermedades : [];
+  const maxScore = Math.max(1, ...top.map(t => t.score || 0));
+  const topHtml = top.length
+    ? top.map(t => {
+        const sc = t.score || 0;
+        const width = Math.round((sc / maxScore) * 100);
+        return `
+          <div class="card-mini">
+            <div class="row" style="justify-content:space-between;margin-bottom:6px">
+              <strong>${t.enfermedad}</strong>
+              <span class="muted">score: ${sc}</span>
+            </div>
+            <div class="meter"><span style="width:${width}%"></span></div>
+          </div>
+        `;
+      }).join("")
+    : '<p class="muted">Sin ranking disponible.</p>';
 
-// Mostrar resultados en el panel de salida
-function out(html) {
-  $("out").innerHTML = "<h2>Resultado</h2>" + html;
-}
+  // descripción corta por categoría (fallback si el backend no trae explicación)
+  const CAT_DESC = {
+    digestiva: "Dolencias del aparato digestivo (estómago, intestino, hígado). Suelen relacionarse con dolor abdominal, náuseas, vómitos o alteraciones del tránsito.",
+    respiratoria: "Trastornos que afectan vías respiratorias y pulmones; típicos: tos, disnea, dolor torácico, sibilancias o fiebre.",
+    cardiovascular: "Alteraciones del corazón y vasos; signos: dolor opresivo, palpitaciones, disnea, edema.",
+    traumatologica: "Lesiones por golpes o esfuerzos: fracturas, esguinces, contusiones, tendinitis.",
+    infecciosa: "Procesos causados por microorganismos; fiebre, malestar general y síntomas locales.",
+    neurologica: "Sistema nervioso central o periférico; cefalea, mareos, déficit motor/sensitivo, convulsiones."
+  };
 
-// parsePair: compatible con JSON moderno {enfermedad, score}
-function parsePair(p) {
-  if (p && typeof p === "object" && "enfermedad" in p && "score" in p) {
-    return { enf: p.enfermedad, score: p.score };
-  }
-  if (Array.isArray(p) && p.length >= 2) {
-    return { enf: String(p[1]), score: Number(p[0]) || 0 };
-  }
-  if (typeof p === "string") {
-    const m = p.match(/^(\d+)\s*-\s*(.+)$/);
-    if (m) return { enf: m[2], score: Number(m[1]) || 0 };
-    return { enf: p, score: 0 };
-  }
-  return { enf: "(?)", score: 0 };
-}
+  const descripcion = (data.detalle && (data.detalle.descripcion || data.detalle.explicacion))
+                      || CAT_DESC[tipo] || "Descripción no disponible para esta categoría.";
 
-// Colores por tipo de categoría
-function colorPorCategoria(tipo) {
-  switch (tipo.toLowerCase()) {
-    case "respiratoria":
-      return "bg-blue";
-    case "cardiovascular":
-      return "bg-red";
-    case "digestiva":
-      return "bg-yellow";
-    case "neurologica":
-      return "bg-purple";
-    case "infecciosa":
-      return "bg-green";
-    case "traumatica":
-      return "bg-orange";
-    default:
-      return "bg-gray";
-  }
-}
+  setOut(`
+    <div class="section">
+      <div class="row" style="gap:10px;align-items:center">
+        <span class="badge ok">Tipo probable: ${tipo}</span>
+      </div>
+      <p class="muted" style="margin-top:8px">${descripcion}</p>
+    </div>
 
-function descripcionPorCategoria(tipo) {
-  switch (tipo.toLowerCase()) {
-    case "respiratoria":
-      return "Las enfermedades respiratorias afectan los pulmones y las vías respiratorias, causando tos, disnea o dolor torácico.";
-    case "cardiovascular":
-      return "Las enfermedades cardiovasculares involucran el corazón y los vasos sanguíneos, y pueden manifestarse con dolor torácico o fatiga.";
-    case "digestiva":
-      return "Las enfermedades digestivas afectan el sistema gastrointestinal, con síntomas como dolor abdominal o náuseas.";
-    case "neurologica":
-      return "Las enfermedades neurológicas involucran el cerebro o los nervios, produciendo síntomas como convulsiones, mareo o temblor.";
-    case "traumatica":
-      return "Las enfermedades o lesiones traumáticas derivan de golpes o esfuerzos físicos, generando dolor localizado o hematomas.";
-    case "infecciosa":
-      return "Las enfermedades infecciosas son causadas por agentes patógenos como virus o bacterias y suelen acompañarse de fiebre o malestar general.";
-    default:
-      return "Categoría no determinada. Los síntomas no son suficientes para una clasificación clara.";
-  }
-}
+    <div class="section">
+      <p class="title-sm">Enfermedades posibles</p>
+      <div class="chips">${chips}</div>
+    </div>
 
-// Inicializar
-window.addEventListener("DOMContentLoaded", loadSyms);
-window.filterSyms = filterSyms;
-window.loadSyms = loadSyms;
-window.diagnose = diagnose;
+    <div class="section">
+      <p class="title-sm">Top por puntuación</p>
+      <div class="col" style="display:grid;gap:10px">${topHtml}</div>
+    </div>
+  `);
+
+  toast("Diagnóstico actualizado");
+};
+
+// ===== consultas avanzadas =====
+window.uiSintomasDe = async function(){
+  const enfermedad = $("#inEnf1").value.trim();
+  if(!enfermedad) return toast("Ingresa una enfermedad");
+  setOut(`<p class="counter">Buscando síntomas de ${enfermedad}…</p>`);
+  const res = await fetch("/api/sintomas_de", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ enfermedad })
+  });
+  const data = await res.json();
+  setOut(`<h3>Síntomas de <code>${data.enfermedad}</code></h3>${ul(data.sintomas)}`);
+};
+
+window.uiEnfermedadesPorSintoma = async function(){
+  const sintoma = $("#inSint1").value.trim();
+  if(!sintoma) return toast("Ingresa un síntoma");
+  setOut(`<p class="counter">Buscando enfermedades con ${sintoma}…</p>`);
+  const res = await fetch("/api/enfermedades_por_sintoma", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ sintoma })
+  });
+  const data = await res.json();
+  setOut(`<h3>Enfermedades asociadas a <code>${data.sintoma}</code></h3>${ul(data.enfermedades)}`);
+};
+
+window.uiCategoriaEnfermedad = async function(){
+  const enfermedad = $("#inEnf2").value.trim();
+  if(!enfermedad) return toast("Ingresa una enfermedad");
+  setOut(`<p class="counter">Buscando categoría…</p>`);
+  const res = await fetch("/api/categoria_enfermedad", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ enfermedad })
+  });
+  const data = await res.json();
+  setOut(`<p>La enfermedad <code>${data.enfermedad}</code> pertenece a la categoría <span class="badge blue">${data.categoria}</span>.</p>`);
+};
+
+window.uiEnfermedadesPosibles = async function(){
+  const sintomas = obtenerSintomasSeleccionados();
+  if(!sintomas.length) return toast("Selecciona síntomas primero");
+  setOut(`<p class="counter">Calculando…</p>`);
+  const res = await fetch("/api/enfermedades_posibles", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ sintomas })
+  });
+  const data = await res.json();
+  setOut(`<h3>Enfermedades posibles</h3>${ul(data.enfermedades_posibles)}`);
+};
+
+// Necesario porque en el HTML usamos onchange="toggleDiagBtn()"
+window.toggleDiagBtn = toggleDiagBtn;
