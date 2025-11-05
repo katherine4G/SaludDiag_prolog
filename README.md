@@ -19,13 +19,13 @@ Incluye una interfaz web ligera (`app.js`) que permite seleccionar síntomas y o
 cd C:/Users/../PROLOG_PROJECT/
 ```
 
-*(Ajustar la ruta de descarga del proyecto dentor de las comillas simples.)*
+*(Ajustar la ruta de descarga del proyecto, o abres un anueva terminal de VS code)*
 
 ---
 
-### 3️- Iniciar el servidor completo
+### 2- Iniciar el servidor completo
 
-```prolog
+```bash
 swipl run.pl
 ```
 
