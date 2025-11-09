@@ -1,4 +1,3 @@
-% run.pl
 :- initialization(main, main).
 :- set_prolog_flag(encoding, utf8).
 
@@ -6,14 +5,18 @@
 :- use_module('server/server.pl', [server/1, stop_all/0]).
 
 main :-
-    catch(stop_all, _, true),
-    server(8080),
-    format('Servidor iniciado en http://localhost:8080/~n', []),
-    wait_loop.
-
-wait_loop :-
-    format('Presiona CTRL + C para detener .~n', []),
-    read_line_to_string(user_input, _),
-    catch(stop_all, _, true),
-    format('Servidor detenido correctamente.~n'),
-    halt(0).
+	% Obtener el puerto asignado por Railway
+(getenv('PORT', PortAtom) ->
+	atom_number(PortAtom, Port);
+	Port = 8080% Fallback local
+	),
+	% Detener servidores activos previos
+	catch(stop_all, _, true),
+	% Iniciar servidor
+	format('🚀 Iniciando servidor en puerto ~w~n', [Port]),
+	catch(server(Port),
+		E,
+		(print_message(error, E),
+			halt(1))),
+	% Mantener proceso vivo (Railway necesita esto)
+	thread_get_message(quit).
